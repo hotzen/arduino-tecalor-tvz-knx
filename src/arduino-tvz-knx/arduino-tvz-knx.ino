@@ -25,6 +25,8 @@
 #define KNX_GA_LEVEL  "5/0/1" // setting/getting a level (1byte int)
 #define KNX_GA_BYPASS "5/0/2" // address to check whether the bypass is active (boolean)
 
+#define KNX_CYCLIC_SEND_INTERVAL 10000 // send level & bypass to the GAs every X ms (0 to disable)
+
 
 // DEBUGGING ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #define DEBUG true
@@ -39,7 +41,6 @@
 #define LEVEL_MIN 1
 #define LEVEL_MAX 3
 
-#define CYCLIC_SEND_INTERVAL 10000 // send level & bypass to the GA every X ms (0 to disable)
 
 byte state; // current application-state
 
@@ -71,12 +72,7 @@ byte ledLevelBlinked;   // level-blinks shown in current cycle
 unsigned long ledTimer; // http://www.forward.com.au/pfod/ArduinoProgramming/TimingDelaysInArduino.html
 
 
-
-// INIT ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 KnxTpUart knx(&Serial, KNX_PA_SELF); // Init KNX TP-UART on Serial
-
-
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 void setup() {
   // init LED
@@ -285,9 +281,9 @@ String getTargetGroupAddress(KnxTelegram* telegram) {
 }
 
 boolean cyclicSendTimerElapsed() {
-  if (CYCLIC_SEND_INTERVAL > 0) {
-    boolean elapsed = ((millis() - cyclicSendTimer) > CYCLIC_SEND_INTERVAL);
-    if (elapsed) cyclicSendTimer += CYCLIC_SEND_INTERVAL;
+  if (KNX_CYCLIC_SEND_INTERVAL > 0) {
+    boolean elapsed = ((millis() - cyclicSendTimer) > KNX_CYCLIC_SEND_INTERVAL);
+    if (elapsed) cyclicSendTimer += KNX_CYCLIC_SEND_INTERVAL;
     return elapsed;
   } else {
     return false;
