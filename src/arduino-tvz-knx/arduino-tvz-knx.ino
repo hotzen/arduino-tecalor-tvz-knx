@@ -112,7 +112,7 @@ void loop() {
       break;
 
     case STATE_INIT_TVZ:
-      //TODO: reading TVZ level & bypass-state
+      //TODO: reading TVZ level & bypass-state / is that even possible?
       level = 2; // dummy
       bypass = false; // dummy
       
@@ -180,6 +180,7 @@ void onWriteToGroupAddress(KnxTelegram* telegram, String targetAddress) {
 void onNewLevel(byte newLevel) {
   if (level != newLevel) {
     if (newLevel >= LEVEL_MIN && newLevel <= LEVEL_MAX) {
+      if (DEBUG) debugPrint("onNewLevel() changing to level " + newLevel);
       levelNew = newLevel;
       state = STATE_CHANGE_LEVEL;  
     } else {
