@@ -33,17 +33,21 @@
 // APP ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #define STATE_INITIAL      0
 #define STATE_INIT_TVZ     1
-#define STATE_IDLE         2
+#define STATE_CYCLIC_SEND  2
 #define STATE_CHANGE_LEVEL 3
 
 #define LEVEL_MIN 1
 #define LEVEL_MAX 3
 
+#define CYCLIC_SEND_INTERVAL 10000 // send level & bypass to the GA every X ms (0 to disable)
+
 byte state; // current application-state
 
 byte level;    // current TVZ level
 byte levelNew; // request to change TVZ level
-boolean bypassActive; // if bypass is currently active (summertime)
+boolean bypass; // if bypass is currently active (summertime)
+
+unsigned long cyclicSendTimer;
 
 
 // LED ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -54,7 +58,7 @@ boolean bypassActive; // if bypass is currently active (summertime)
 
 #define LED_LEVEL_INTERVAL 1500 // time between level-blinks
 #define LED_LEVEL_DURATION 250  // duration of a single level-blink
-#define LED_LEVEL_DISTANCE 250  // time between single level-blinks
+#define LED_LEVEL_PAUSE    250  // time between single level-blinks
 
 #define LED_STATE_OFF                  0 // led is just off
 #define LED_STATE_INIT_BLINKING        1 // led is on and doing init-blinks
@@ -89,12 +93,13 @@ void setup() {
   knx.addListenGroupAddress(KNX_GA_LEVEL);
   knx.addListenGroupAddress(KNX_GA_BYPASS);
 
-  // reset state
+  // initialize state
   state = STATE_INITIAL;
   level = 0;
-  bypassActive = false;
+  bypass = false;
 
   // init timers
+  cyclicSendTimer = millis();
   ledTimer = millis();
 }
 
@@ -109,22 +114,36 @@ void loop() {
     case STATE_INIT_TVZ:
       //TODO: reading TVZ level & bypass-state
       level = 2; // dummy
-      bypassActive = false; // dummy
+      bypass = false; // dummy
       
-      state = STATE_IDLE;
+      state = STATE_CYCLIC_SEND;
       break;
 
-    case STATE_IDLE:
-      // ... idling ...
+    case STATE_CYCLIC_SEND:
+      if (cyclicSendTimerElapsed()) {
+        cyclicSend();
+      }
       break;
 
     case STATE_CHANGE_LEVEL:
-      //TODO: trigger optokopplers
-      
-      level = levelNew;
-      state = STATE_IDLE;
+      changeLevelTo( levelNew );
+      state = STATE_CYCLIC_SEND;
       break;
   }
+}
+
+void cyclicSend() {
+  boolean sentLevel = knx.groupWrite1ByteInt(KNX_GA_LEVEL, level);
+  if (DEBUG) debugPrint("cyclicSend() sent level: " + sentLevel);
+  
+  boolean sentBypass = knx.groupWriteBool(KNX_GA_BYPASS, bypass);
+  if (DEBUG) debugPrint("cyclicSend() sent bypass: " + sentBypass);
+}
+
+void changeLevelTo(int newLevel) {
+  //TODO: trigger optokopplers
+
+  level = newLevel;
 }
 
 void onReadToPhysicalAddress(KnxTelegram* telegram, String targetAddress) {
@@ -137,10 +156,10 @@ void onReadToGroupAddress(KnxTelegram* telegram, String targetAddress) {
     knx.groupAnswer1ByteInt(targetAddress, level);
     
   } else if (targetAddress = KNX_GA_BYPASS) {
-    knx.groupAnswerBool(targetAddress, bypassActive);
+    knx.groupAnswerBool(targetAddress, bypass);
     
   } else {
-    if (DEBUG) debugPrint("onReadToGroupAddress() unknown GA " + targetAddress);
+    if (DEBUG) debugPrint("onReadToGroupAddress() unknown GA: " + targetAddress);
   }
 }
 
@@ -154,14 +173,20 @@ void onWriteToGroupAddress(KnxTelegram* telegram, String targetAddress) {
     onNewLevel( telegram->get1ByteIntValue() );
     
   } else {
-    if (DEBUG) debugPrint("onWriteToGroupAddress() unknown GA " + targetAddress);
+    if (DEBUG) debugPrint("onWriteToGroupAddress() unknown GA: " + targetAddress);
   }
 }
 
 void onNewLevel(byte newLevel) {
   if (level != newLevel) {
-    levelNew = newLevel;  
-    state = STATE_CHANGE_LEVEL;
+    if (newLevel >= LEVEL_MIN && newLevel <= LEVEL_MAX) {
+      levelNew = newLevel;
+      state = STATE_CHANGE_LEVEL;  
+    } else {
+      if (DEBUG) debugPrint("onNewLevel() invalid new level " + newLevel);
+    }
+  } else {
+    if (DEBUG) debugPrint("onNewLevel() already on level " + newLevel);
   }
 }
 
@@ -258,6 +283,16 @@ String getTargetGroupAddress(KnxTelegram* telegram) {
          + String(0 + telegram->getTargetSubGroup());
 }
 
+boolean cyclicSendTimerElapsed() {
+  if (CYCLIC_SEND_INTERVAL > 0) {
+    boolean elapsed = ((millis() - cyclicSendTimer) > CYCLIC_SEND_INTERVAL);
+    if (elapsed) cyclicSendTimer += CYCLIC_SEND_INTERVAL;
+    return elapsed;
+  } else {
+    return false;
+  }
+}
+
 boolean ledTimeElapsed(unsigned long ms) {
   boolean elapsed = ((millis() - ledTimer) > ms);
   if (elapsed) ledTimer += ms;
@@ -297,7 +332,7 @@ void led(int level) {
       break;
 
     case LED_STATE_BETWEEN_LEVEL_BLINKS: // led is off, between blinks
-      if (ledTimeElapsed(LED_LEVEL_DISTANCE)) { // was off long enough
+      if (ledTimeElapsed(LED_LEVEL_PAUSE)) { // was off long enough
         digitalWrite(LED_PIN, HIGH);
         ledState = LED_STATE_LEVEL_BLINKING;
         ledLevelBlinked += 1;
