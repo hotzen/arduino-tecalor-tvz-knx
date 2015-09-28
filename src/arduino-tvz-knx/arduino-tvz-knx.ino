@@ -29,7 +29,13 @@
 
 
 // DEBUGGING ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#define DEBUG true
+//#define DEBUG
+
+#ifdef DEBUG
+ #define DEBUG_PRINT(x) Serial.println(x) // you can't debug an TPUART on the same serial ...
+#else
+ #define DEBUG_PRINT(x)
+#endif
 
 
 // APP ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -131,10 +137,10 @@ void loop() {
 
 void cyclicSend() {
   boolean sentLevel = knx.groupWrite1ByteInt(KNX_GA_LEVEL, level);
-  if (DEBUG) debugPrint("cyclicSend() sent level: " + sentLevel);
+  DEBUG_PRINT("cyclicSend() sent level: " + sentLevel);
   
   boolean sentBypass = knx.groupWriteBool(KNX_GA_BYPASS, bypass);
-  if (DEBUG) debugPrint("cyclicSend() sent bypass: " + sentBypass);
+  DEBUG_PRINT("cyclicSend() sent bypass: " + sentBypass);
 }
 
 void changeLevelTo(int newLevel) {
@@ -144,7 +150,7 @@ void changeLevelTo(int newLevel) {
 }
 
 void onReadToPhysicalAddress(KnxTelegram* telegram, String targetAddress) {
-  if (DEBUG) debugPrint("onReadToPhysicalAddress() unsupported");
+  DEBUG_PRINT("onReadToPhysicalAddress() unsupported");
 }
 
 void onReadToGroupAddress(KnxTelegram* telegram, String targetAddress) {
@@ -156,12 +162,12 @@ void onReadToGroupAddress(KnxTelegram* telegram, String targetAddress) {
     knx.groupAnswerBool(targetAddress, bypass);
     
   } else {
-    if (DEBUG) debugPrint("onReadToGroupAddress() unknown GA: " + targetAddress);
+    DEBUG_PRINT("onReadToGroupAddress() unknown GA: " + targetAddress);
   }
 }
 
 void onWriteToPhysicalAddress(KnxTelegram* telegram, String targetAddress) {
-  if (DEBUG) debugPrint("onWriteToPhysicalAddress() unsupported");
+  DEBUG_PRINT("onWriteToPhysicalAddress() unsupported");
 }
 
 void onWriteToGroupAddress(KnxTelegram* telegram, String targetAddress) {
@@ -170,21 +176,21 @@ void onWriteToGroupAddress(KnxTelegram* telegram, String targetAddress) {
     onNewLevel( telegram->get1ByteIntValue() );
     
   } else {
-    if (DEBUG) debugPrint("onWriteToGroupAddress() unknown GA: " + targetAddress);
+    DEBUG_PRINT("onWriteToGroupAddress() unknown GA: " + targetAddress);
   }
 }
 
 void onNewLevel(byte newLevel) {
   if (level != newLevel) {
     if (newLevel >= LEVEL_MIN && newLevel <= LEVEL_MAX) {
-      if (DEBUG) debugPrint("onNewLevel() changing to level " + newLevel);
+      DEBUG_PRINT("onNewLevel() changing to level " + newLevel);
       levelNew = newLevel;
       state = STATE_CHANGE_LEVEL;  
     } else {
-      if (DEBUG) debugPrint("onNewLevel() invalid new level " + newLevel);
+      DEBUG_PRINT("onNewLevel() invalid new level " + newLevel);
     }
   } else {
-    if (DEBUG) debugPrint("onNewLevel() already on level " + newLevel);
+    DEBUG_PRINT("onNewLevel() already on level " + newLevel);
   }
 }
 
@@ -193,11 +199,11 @@ void onTelegram(KnxTelegram* telegram) {
     case KNX_COMMAND_READ:
       if (telegram->isTargetGroup()) {
         String targetAddress = getTargetGroupAddress(telegram);
-        if (DEBUG) debugPrint("KNX_TELEGRAM/READ@GA(" + targetAddress + ")");
+        DEBUG_PRINT("KNX_TELEGRAM/READ@GA(" + targetAddress + ")");
         onReadToGroupAddress(telegram, targetAddress);
       } else {
         String targetAddress = getTargetPhysicalAddress(telegram);
-        if (DEBUG) debugPrint("KNX_TELEGRAM/READ@PA(" + targetAddress + ")");
+        DEBUG_PRINT("KNX_TELEGRAM/READ@PA(" + targetAddress + ")");
         onReadToPhysicalAddress(telegram, targetAddress);
       }
       break;
@@ -205,45 +211,45 @@ void onTelegram(KnxTelegram* telegram) {
     case KNX_COMMAND_WRITE:
       if (telegram->isTargetGroup()) {
         String targetAddress = getTargetGroupAddress(telegram);
-        if (DEBUG) debugPrint("KNX_TELEGRAM/WRITE@GA(" + targetAddress + ")");
+        DEBUG_PRINT("KNX_TELEGRAM/WRITE@GA(" + targetAddress + ")");
         onWriteToGroupAddress(telegram, targetAddress);
       } else {
         String targetAddress = getTargetPhysicalAddress(telegram);
-        if (DEBUG) debugPrint("KNX_TELEGRAM/WRITE@PA(" + targetAddress + ")");
+        DEBUG_PRINT("KNX_TELEGRAM/WRITE@PA(" + targetAddress + ")");
         onWriteToPhysicalAddress(telegram, targetAddress);
       }
       break;
 
     case KNX_COMMAND_ANSWER:
-      if (DEBUG) debugPrint("KNX_TELEGRAM/ANSWER");
+      DEBUG_PRINT("KNX_TELEGRAM/ANSWER");
       break;
 
     case KNX_COMMAND_INDIVIDUAL_ADDR_WRITE: // programming-mode
-      if (DEBUG) debugPrint("KNX_TELEGRAM/INDIVIDUAL_ADDR_WRITE");
+      DEBUG_PRINT("KNX_TELEGRAM/INDIVIDUAL_ADDR_WRITE");
       break;
 
     case KNX_COMMAND_INDIVIDUAL_ADDR_REQUEST:
-      if (DEBUG) debugPrint("KNX_TELEGRAM/INDIVIDUAL_ADDR_REQUEST");
+      DEBUG_PRINT("KNX_TELEGRAM/INDIVIDUAL_ADDR_REQUEST");
       break;
 
     case KNX_COMMAND_INDIVIDUAL_ADDR_RESPONSE:
-      if (DEBUG) debugPrint("KNX_TELEGRAM/INDIVIDUAL_ADDR_RESPONSE");
+      DEBUG_PRINT("KNX_TELEGRAM/INDIVIDUAL_ADDR_RESPONSE");
       break;
 
     case KNX_COMMAND_MASK_VERSION_READ:
-      if (DEBUG) debugPrint("KNX_TELEGRAM/MASK_VERSION_READ");
+      DEBUG_PRINT("KNX_TELEGRAM/MASK_VERSION_READ");
       break;
 
     case KNX_COMMAND_MASK_VERSION_RESPONSE:
-      if (DEBUG) debugPrint("KNX_TELEGRAM/MASK_VERSION_RESPONSE");
+      DEBUG_PRINT("KNX_TELEGRAM/MASK_VERSION_RESPONSE");
       break;
 
     case KNX_COMMAND_RESTART:
-      if (DEBUG) debugPrint("KNX_TELEGRAM/RESTART");
+      DEBUG_PRINT("KNX_TELEGRAM/RESTART");
       break;
 
     case KNX_COMMAND_ESCAPE:
-      if (DEBUG) debugPrint("KNX_TELEGRAM/ESCAPE");
+      DEBUG_PRINT("KNX_TELEGRAM/ESCAPE");
       break;
   }
 }
@@ -252,7 +258,7 @@ void serialEvent() {
   KnxTpUartSerialEventType evtType = knx.serialEvent();
   switch (evtType) {
     case TPUART_RESET_INDICATION:
-      if (DEBUG) debugPrint("TPUART_RESET_INDICATION");
+      DEBUG_PRINT("TPUART_RESET_INDICATION");
       break;
 
     case KNX_TELEGRAM:
@@ -260,11 +266,11 @@ void serialEvent() {
       break;
 
     case IRRELEVANT_KNX_TELEGRAM:
-      if (DEBUG) debugPrint("IRRELEVANT_KNX_TELEGRAM");
+      DEBUG_PRINT("IRRELEVANT_KNX_TELEGRAM");
       break;
 
     case UNKNOWN:
-      if (DEBUG) debugPrint("UNKNOWN");
+      DEBUG_PRINT("UNKNOWN");
       break;
   }
 }
@@ -338,8 +344,3 @@ void led(int level) {
       break;
   }
 }
-
-void debugPrint(String msg) {
-  Serial.println(msg);
-}
-
