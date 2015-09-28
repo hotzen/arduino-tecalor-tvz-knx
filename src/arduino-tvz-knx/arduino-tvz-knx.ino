@@ -32,7 +32,9 @@
 //#define DEBUG
 
 #ifdef DEBUG
- #define DEBUG_PRINT(x) Serial.println(x) // you can't debug an TPUART on the same serial ...
+ #define DEBUG_PRINT(x) // Serial1.println(x)
+                        // The UNO only has one serial, you can't debug AND tpuart on the same serial...
+                        // With a MEGA you get additional Serial1 etc. to use for debugging
 #else
  #define DEBUG_PRINT(x)
 #endif
