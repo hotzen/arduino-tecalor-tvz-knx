@@ -21,12 +21,29 @@
 
 // KNX ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #define KNX_PA_SELF "15.15.20" // physical address of this arduino
-#define KNX_GA_SEND "0/7/1"
-#define KNX_GA_LISTEN "9/2/0"
+
+#define KNX_GA_LEVEL  "5/0/1" // setting/getting a level (1byte int)
+#define KNX_GA_BYPASS "5/0/2" // address to check whether the bypass is active (boolean)
 
 
 // DEBUGGING ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #define DEBUG true
+
+
+// APP ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#define STATE_INITIAL      0
+#define STATE_INIT_TVZ     1
+#define STATE_IDLE         2
+#define STATE_CHANGE_LEVEL 3
+
+#define LEVEL_MIN 1
+#define LEVEL_MAX 3
+
+byte state; // current application-state
+
+byte level;    // current TVZ level
+byte levelNew; // request to change TVZ level
+boolean bypassActive; // if bypass is currently active (summertime)
 
 
 // LED ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -50,14 +67,6 @@ byte ledLevelBlinked;   // level-blinks shown in current cycle
 unsigned long ledTimer; // http://www.forward.com.au/pfod/ArduinoProgramming/TimingDelaysInArduino.html
 
 
-// CORE ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#define STATE_INITIAL  0
-#define STATE_INIT_TVZ 1
-#define STATE_WORKING  2
-
-byte state; // current application-state
-byte fanLevel; // current fan-level
-
 
 // INIT ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 KnxTpUart knx(&Serial, KNX_PA_SELF); // Init KNX TP-UART on Serial
@@ -66,42 +75,31 @@ KnxTpUart knx(&Serial, KNX_PA_SELF); // Init KNX TP-UART on Serial
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 void setup() {
-  initLED();
-  initKNX();
-  initTVZ();
-  initTimers();
-
-  state = STATE_INITIAL;
-}
-
-void initLED() {
+  // init LED
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
   ledState = LED_STATE_OFF;
   ledLevelBlinks = ledLevelBlinked = 0;
-}
-
-void initKNX() {
+  
   // Serial: Pin 0 (RX) and 1 (TX).
   Serial.begin(19200); // connect to serial
   knx.uartReset();
 
   // listen to KNX GAs
-  knx.addListenGroupAddress(KNX_GA_LISTEN);
-  delay(1000); //TODO: why?
-}
+  knx.addListenGroupAddress(KNX_GA_LEVEL);
+  knx.addListenGroupAddress(KNX_GA_BYPASS);
 
-void initTVZ() {
-  fanLevel = 0;
-}
+  // reset state
+  state = STATE_INITIAL;
+  level = 0;
+  bypassActive = false;
 
-void initTimers() {
+  // init timers
   ledTimer = millis();
 }
 
-// LOOP #############################################################
 void loop() {
-  led(fanLevel);
+  led(level);
 
   switch (state) {
     case STATE_INITIAL:
@@ -109,82 +107,62 @@ void loop() {
       break;
 
     case STATE_INIT_TVZ:
+      //TODO: reading TVZ level & bypass-state
+      level = 2; // dummy
+      bypassActive = false; // dummy
       
+      state = STATE_IDLE;
       break;
 
-    case STATE_WORKING:
-
-      break;
-  }
-}
-
-boolean led(boolean on) {
-  digitalWrite(LED_PIN, on ? HIGH : LOW);
-}
-
-boolean ledTimeElapsed(unsigned long ms) {
-  boolean elapsed = ((millis() - ledTimer) > ms);
-  if (elapsed) ledTimer += ms;
-  return elapsed;
-}
-
-void led(int level) {
-  ledLevelBlinks = level;
-  switch (ledState) {
-    case LED_STATE_OFF: // led is off
-      if (ledLevelBlinks == 0) { // show fast init-blinks
-        if (ledTimeElapsed(LED_INIT_INTERVAL)) {
-          led(true);
-          ledState = LED_STATE_INIT_BLINKING;
-        }
-      } else { // show level-blinks
-        if (ledTimeElapsed(LED_LEVEL_INTERVAL)) { // ready for first blink
-          led(true);
-          ledState = LED_STATE_LEVEL_BLINKING;
-          ledLevelBlinked = 1;
-        }
-      }
+    case STATE_IDLE:
+      // ... idling ...
       break;
 
-    case LED_STATE_INIT_BLINKING:
-      if (ledTimeElapsed(LED_INIT_DURATION)) { // was on long enough
-        led(false);
-        ledState = LED_STATE_OFF;
-      }
-      break;
-
-    case LED_STATE_LEVEL_BLINKING: // led is on
-      if (ledTimeElapsed(LED_LEVEL_DURATION)) { // was on long enough
-        led(false);
-        ledState = (ledLevelBlinked < ledLevelBlinks) ? LED_STATE_BETWEEN_LEVEL_BLINKS : LED_STATE_OFF;
-      }
-      break;
-
-    case LED_STATE_BETWEEN_LEVEL_BLINKS: // led is off, between blinks
-      if (ledTimeElapsed(LED_LEVEL_DISTANCE)) { // was off long enough
-        led(true);
-        ledState = LED_STATE_LEVEL_BLINKING;
-        ledLevelBlinked += 1;
-      }
+    case STATE_CHANGE_LEVEL:
+      //TODO: trigger optokopplers
+      
+      level = levelNew;
+      state = STATE_IDLE;
       break;
   }
 }
-
 
 void onReadToPhysicalAddress(KnxTelegram* telegram, String targetAddress) {
-
+  if (DEBUG) debugPrint("onReadToPhysicalAddress() unsupported");
 }
 
 void onReadToGroupAddress(KnxTelegram* telegram, String targetAddress) {
-
+  
+  if (targetAddress == KNX_GA_LEVEL) {
+    knx.groupAnswer1ByteInt(targetAddress, level);
+    
+  } else if (targetAddress = KNX_GA_BYPASS) {
+    knx.groupAnswerBool(targetAddress, bypassActive);
+    
+  } else {
+    if (DEBUG) debugPrint("onReadToGroupAddress() unknown GA " + targetAddress);
+  }
 }
 
 void onWriteToPhysicalAddress(KnxTelegram* telegram, String targetAddress) {
-
+  if (DEBUG) debugPrint("onWriteToPhysicalAddress() unsupported");
 }
 
 void onWriteToGroupAddress(KnxTelegram* telegram, String targetAddress) {
+  
+  if (targetAddress == KNX_GA_LEVEL) {
+    onNewLevel( telegram->get1ByteIntValue() );
+    
+  } else {
+    if (DEBUG) debugPrint("onWriteToGroupAddress() unknown GA " + targetAddress);
+  }
+}
 
+void onNewLevel(byte newLevel) {
+  if (level != newLevel) {
+    levelNew = newLevel;  
+    state = STATE_CHANGE_LEVEL;
+  }
 }
 
 void onTelegram(KnxTelegram* telegram) {
@@ -278,6 +256,54 @@ String getTargetGroupAddress(KnxTelegram* telegram) {
   return String(0 + telegram->getTargetMainGroup())     + "/"
          + String(0 + telegram->getTargetMiddleGroup()) + "/"
          + String(0 + telegram->getTargetSubGroup());
+}
+
+boolean ledTimeElapsed(unsigned long ms) {
+  boolean elapsed = ((millis() - ledTimer) > ms);
+  if (elapsed) ledTimer += ms;
+  return elapsed;
+}
+
+void led(int level) {
+  ledLevelBlinks = level;
+  switch (ledState) {
+    case LED_STATE_OFF: // led is off
+      if (ledLevelBlinks == 0) { // show fast init-blinks
+        if (ledTimeElapsed(LED_INIT_INTERVAL)) {
+          digitalWrite(LED_PIN, HIGH);
+          ledState = LED_STATE_INIT_BLINKING;
+        }
+      } else { // show level-blinks
+        if (ledTimeElapsed(LED_LEVEL_INTERVAL)) { // ready for first blink
+          digitalWrite(LED_PIN, HIGH);
+          ledState = LED_STATE_LEVEL_BLINKING;
+          ledLevelBlinked = 1;
+        }
+      }
+      break;
+
+    case LED_STATE_INIT_BLINKING:
+      if (ledTimeElapsed(LED_INIT_DURATION)) { // was on long enough
+        digitalWrite(LED_PIN, LOW);
+        ledState = LED_STATE_OFF;
+      }
+      break;
+
+    case LED_STATE_LEVEL_BLINKING: // led is on
+      if (ledTimeElapsed(LED_LEVEL_DURATION)) { // was on long enough
+        digitalWrite(LED_PIN, LOW);
+        ledState = (ledLevelBlinked < ledLevelBlinks) ? LED_STATE_BETWEEN_LEVEL_BLINKS : LED_STATE_OFF;
+      }
+      break;
+
+    case LED_STATE_BETWEEN_LEVEL_BLINKS: // led is off, between blinks
+      if (ledTimeElapsed(LED_LEVEL_DISTANCE)) { // was off long enough
+        digitalWrite(LED_PIN, HIGH);
+        ledState = LED_STATE_LEVEL_BLINKING;
+        ledLevelBlinked += 1;
+      }
+      break;
+  }
 }
 
 void debugPrint(String msg) {
